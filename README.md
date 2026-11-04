@@ -63,7 +63,7 @@ Player 1 buttons                                Player 2 buttons
 
 ## Wiring Diagram
 
-
+![Wiring Diagram](wiringDiagram.png)
 
 ### Buttons (identical on both boards)
 | Button | ESP32 GPIO | Description |
