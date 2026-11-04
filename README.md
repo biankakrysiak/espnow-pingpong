@@ -1,3 +1,222 @@
-# espnow-pingpong
+# ESP32 ESP-NOW Ping-Pong Game Nodes
 
-Two-player wireless Ping-Pong on two ESP32 boards using ESP-NOW, with a phone display over Wi-Fi or BLE for latency comparison.
+Firmware for the two ESP32 boards in a wireless two-player Ping-Pong game. This is part of a group project - the ESP32 boards talk to each other directly over ESP-NOW and run the whole game logic themselves, while a phone app is used only as a display. The phone can be connected to the host ESP32 over Wi-Fi or over BLE, so both links can be compared.
+
+---
+
+## Project Overview
+
+ESP-NOW is a low-power, low-latency wireless protocol from Espressif that lets ESP32 boards exchange short packets without a router or a connection handshake. This project uses it as the link between the two players and compares Wi-Fi and BLE as the interface to a phone, to find out which one suits a real-time system better.
+
+The full system consists of:
+- **ESP32 #1 (host)** (this repository) - runs the game physics, reads player 1 buttons, sends the game state to the client and to the phone
+- **ESP32 #2 (client)** (this repository) - reads player 2 buttons, sends its paddle position to the host
+- **Mobile app** (`app/`) - displays the current game state received from the host over Wi-Fi or BLE
+
+---
+
+## System Architecture
+
+```
+Player 1 buttons                                Player 2 buttons
+  (LEFT/RIGHT)                                    (LEFT/RIGHT)
+       ↓ GPIO                                          ↓ GPIO
+ ESP32 #1 (host) ◄──[paddle position, ESP-NOW]── ESP32 #2 (client)
+  (game physics)  ──[game state, ESP-NOW]──────►
+       │
+       ├──[Wi-Fi, WebSocket]──┐
+       │                      ├──► Mobile app (game display)
+       └──[BLE, notify]───────┘
+         (one at a time, never both)
+```
+
+---
+
+## Team Responsibilities
+
+### Bianka - hardware and firmware
+- Designing the hardware schematic (ESP32 boards, buttons, wiring)
+- Configuring the ESP-NOW link between the two ESP32 boards
+- Writing the ESP32 firmware in C++ (Arduino framework, PlatformIO)
+- Implementing the game logic and physics (ball movement, bounces, collisions, scoring)
+- Implementing Wi-Fi and BLE communication with the phone on the ESP32 side
+
+### Dawid - mobile app and testing
+- Building the mobile app and the game screen
+- Implementing Wi-Fi and BLE communication with the ESP32 on the phone side
+- System integration
+- Measuring latency and stability of the Wi-Fi and BLE links
+
+---
+
+## Hardware
+
+| Component | Purpose |
+|---|---|
+| 2x ESP32 DevKit | Host and client |
+| 2x Breadboard and ~10x jumper wires | Wiring |
+| 4x push button | LEFT / RIGHT for each player |
+| Phone (Android) | Game display |
+| 2x USB cable (data capable) | Flashing and power |
+
+---
+
+## Wiring Diagram
+
+![Wiring Diagram](wiringDiagram.png)
+
+### Buttons (identical on both boards)
+| Button | ESP32 GPIO | Description |
+|---|---|---|
+| LEFT (one leg) | GPIO25 | Move paddle left |
+| RIGHT (one leg) | GPIO26 | Move paddle right |
+| Other leg of both buttons | GND | Ground |
+
+No external resistor is needed - the firmware enables the internal pull-up (`INPUT_PULLUP`), so a pressed button reads as `LOW`. Place each button across the center gap of the breadboard, so its two sides sit in different rows: one side goes to the GPIO pin, the other to GND. Pins can be changed in `lib/protocol/config.h`.
+
+---
+
+## How It Works
+
+**Game:**
+1. Player presses the LEFT or RIGHT button
+2. The ESP32 reads the GPIO state and moves its paddle
+3. ESP32 #2 sends its paddle position to ESP32 #1 over ESP-NOW
+4. ESP32 #1 runs the physics: moves the ball, detects bounces and updates the score
+5. ESP32 #1 sends the current game state to ESP32 #2 over ESP-NOW (about 60 times per second)
+
+**Phone display:**
+1. ESP32 #1 forwards the current game state to the phone
+2. Wi-Fi or BLE is used for the link, never both at once
+3. The app receives the data and draws the board
+
+**Rules:** player 1 (host) plays the bottom paddle and player 2 (client) the top one. The first player to 5 points wins. The ball speeds up on every paddle hit and the bounce angle depends on where it hits the paddle. After the game ends, pressing both host buttons at once restarts it.
+
+---
+
+## Communication Protocol
+
+Packets are packed structs defined in `lib/protocol/protocol.h`. Each one carries a sequence number so packet loss can be measured on the receiving side.
+
+### Client → Host (`InputPacket`, 9 B)
+| Field | Type | Description |
+|---|---|---|
+| `type` | uint8 | `PKT_INPUT` |
+| `seq` | uint16 | Sequence number |
+| `paddle_x` | int16 | Center of the player 2 paddle |
+| `t_ms` | uint32 | Sender `millis()` |
+
+### Host → Client / Phone (`StatePacket`, 18 B)
+| Field | Type | Description |
+|---|---|---|
+| `type` | uint8 | `PKT_STATE` |
+| `seq` | uint16 | Sequence number |
+| `ball_x`, `ball_y` | int16 | Ball position |
+| `p1_x`, `p2_x` | int16 | Paddle centers |
+| `score1`, `score2` | uint8 | Scores |
+| `status` | uint8 | `0` serve, `1` playing, `2` game over |
+| `host_t_ms` | uint32 | Host `millis()` |
+
+---
+
+## Phone Interface Modes
+
+| Mode | Transport | Notes |
+|---|---|---|
+| Wi-Fi | Access point on the host + WebSocket | Higher throughput, but the phone has no internet access over this network |
+| BLE | GATT notifications | Lower power, limited packet size |
+
+Planned measurements: end-to-end latency, jitter, packet loss, range, and the effect of running ESP-NOW in parallel.
+
+---
+
+## Repository Structure
+
+```
+├── lib/
+│   ├── game/
+│   │   ├── game.h/.cpp      # Game physics and scoring (no Arduino dependency)
+│   └── protocol/
+│       ├── protocol.h       # Packet definitions
+│       └── config.h         # MAC addresses, pins, channel, tick rate
+├── src/
+│   ├── host/
+│   │   ├── main.cpp         # Host: physics, ESP-NOW, state broadcast
+│   │   └── phone.h          # Hooks for the Wi-Fi / BLE link to the phone
+│   └── client/
+│       └── main.cpp         # Client: buttons, ESP-NOW
+├── include/
+├── test/
+├── platformio.ini           # Two environments: host and client
+├── wiringDiagram.png        # Hardware wiring diagram
+│
+├── app/                     # Mobile app TBD
+│
+└── README.md
+```
+
+---
+
+## Setup & Flashing
+
+**Requirements:**
+- [Visual Studio Code](https://code.visualstudio.com/) with the [PlatformIO IDE](https://platformio.org/install/ide?install=vscode) extension
+- USB driver for the board (CP210x or CH340)
+- Platform pinned to `espressif32@6.9.0` (Arduino-ESP32 core 2.0.17) in `platformio.ini`
+
+The host and the client are **two different programs**, so flash one board at a time.
+
+**1. Read the MAC address of each board:**
+
+```bash
+# Board 1 -> host
+pio run -e host -t upload --upload-port COM5
+pio device monitor -b 115200 --port COM5     # note "HOST MAC: ..."
+
+# Board 2 -> client
+pio run -e client -t upload --upload-port COM6
+pio device monitor -b 115200 --port COM6     # note "CLIENT MAC: ..."
+```
+
+Replace with your appropirate COM port.
+The MAC address is printed only once at startup. If the monitor shows nothing, press the **EN** (reset) button on the board.
+
+**2. Put both MAC addresses into `lib/protocol/config.h`** (for example `AA:BB:CC:11:22:33` becomes `0xAA, 0xBB, 0xCC, 0x11, 0x22, 0x33`):
+
+```cpp
+static const uint8_t HOST_MAC[6]   = {0xAA, 0xBB, 0xCC, 0x11, 0x22, 0x33};
+static const uint8_t CLIENT_MAC[6] = {0x.., 0x.., 0x.., 0x.., 0x.., 0x..};
+```
+
+**3. Flash both boards again** with the same commands as above (`-e host` for the host board, `-e client` for the client board).
+
+**4. Check the link:** power both boards. In the host serial log `rx=` should keep growing with `lost=` near zero, and the client log should print the ball position and the score.
+
+If upload hangs on `Connecting...`, hold the **BOOT** button on the board while flashing starts.
+
+---
+
+## Tech Stack
+
+- **Language:** C++ (Arduino framework)
+- **Build system:** PlatformIO
+- **Communication:** ESP-NOW (ESP32 ↔ ESP32), Wi-Fi and BLE (ESP32 ↔ phone)
+- **Protocols:** GPIO (buttons)
+- **Hardware:** 2x ESP32 DevKit, push buttons
+- **Mobile App:** TBD
+
+---
+
+## Known Limitations
+
+- ESP-NOW runs on the Wi-Fi radio, so the Wi-Fi access point and ESP-NOW must use the **same channel** (`ESPNOW_CHANNEL`)
+- BLE and ESP-NOW share the 2.4 GHz radio, so extra packet loss is possible when BLE is active
+- Wi-Fi and BLE are alternative modes, not used at the same time
+- ESP-NOW packets are sent without encryption
+- The firmware must be built with Arduino-ESP32 core 2.x (callback signatures differ in 3.x)
+
+---
+
+## Status
+
+University group project - work in progress.
