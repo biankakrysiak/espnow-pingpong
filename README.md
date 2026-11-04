@@ -220,3 +220,4 @@ If upload hangs on `Connecting...`, hold the **BOOT** button on the board while 
 ## Status
 
 University group project - work in progress.
+Hardware part mostly done, minor fixes will be done.
