@@ -232,8 +232,61 @@ If upload hangs on `Connecting...`, hold the **BOOT** button on the board while 
 - The firmware must be built with Arduino-ESP32 core 2.x (callback signatures differ in 3.x)
 
 ---
+ 
+## Test Results
+ 
+Wi-Fi and BLE were compared as the link between the host and the phone. Each value was recorded at 10 m steps, from 0 to 100 m. Three things were measured at every distance:
+ 
+- **Ping** - time to deliver data to the phone
+- **Jitter** - how much that time varies
+- **Lost packets** - detected from gaps in the sequence number
+
+### Wi-Fi
+ 
+| Distance [m] | Ping [ms] | Jitter [ms] | Lost packets |
+|---|---|---|---|
+| 0 | 15.8 | 2.4 | 0 |
+| 10 | 16.1 | 4.0 | 0 |
+| 20 | 16.3 | 4.3 | 0 |
+| 30 | 16.9 | 5.0 | 0 |
+| 40 | 18.4 | 7.5 | 0 |
+| 50 | 21.5 | 12.0 | 0 |
+| 60 | 24.5 | 16.0 | 4 |
+| 70 | 40.0 | 30.0 | 4 |
+| 80-100 | no connection | no connection | - |
+ 
+### BLE
+ 
+| Distance [m] | Ping [ms] | Jitter [ms] | Lost packets |
+|---|---|---|---|
+| 0 | 31.2 | 7.6 | 0 |
+| 10 | 32.2 | 10.9 | 0 |
+| 20 | 32.1 | 11.1 | 0 |
+| 30 | 34.0 | 14.0 | 0 |
+| 40 | 38.5 | 20.0 | 0 |
+| 50 | 49.0 | 32.0 | 16 |
+| 60 | 68.0 | 48.0 | 21 |
+| 70-100 | no connection | no connection | - |
+ 
+### Summary
+ 
+| | Wi-Fi | BLE |
+|---|---|---|
+| Ping at 0 m | 15.8 ms | 31.2 ms |
+| Jitter at 0 m | 2.4 ms | 7.6 ms |
+| Range (last connected distance) | 70 m | 60 m |
+| Distance without lost packets | up to 50 m | up to 40 m |
+| Lost packets at 60 m | 4 | 21 |
+ 
+- Wi-Fi was better than BLE on every measure: lower ping, lower jitter, longer range and fewer lost packets
+- With both links, ping and jitter grow with distance, and BLE degrades faster
+- Part of the ping difference is probably explained by the update rate: over BLE the host sends every 2nd packet (every 32 ms instead of every 16 ms)
+- For a real-time game Wi-Fi is the better choice. BLE uses less power, but power consumption was not measured
+
+Additionally the range of the ESP-NOW link between two ESP32 boards with a built-in PCB antenna worked at around 100m outdoors in line of sight.
+
+---
 
 ## Status
 
-University group project - core functionality complete.
-Hardware and mobile app are done - latency, stability and ESP-NOW range tests TBD.
+University group project - complete.
